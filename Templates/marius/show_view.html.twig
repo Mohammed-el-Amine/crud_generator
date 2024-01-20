@@ -1,0 +1,15 @@
+{# templates/marius/show.html.twig #}
+
+{% extends 'base.html.twig' %}
+
+{% block title %}
+    Affichage de {{ entityName }}
+{% endblock %}
+
+{% block body %}
+    <h1>Affichage de {{ entityName }}</h1>
+
+    <p>ID: {{ item.id }}</p>
+    <p>Nom: {{ item.name }}</p>
+    {# Vous pouvez afficher d'autres propriétés de l'entité ici #}
+{% endblock %}

@@ -1,0 +1,443 @@
+#!/usr/bin/env php
+<?php
+
+class Database
+{
+    protected $dbh;
+
+    public function __construct()
+    {
+        $this->dbh = new PDO('mysql:host=localhost;dbname=crud_generator', 'amine', 'Superteemo1');
+    }
+
+    public function prepare($sql)
+    {
+        return $this->dbh->prepare($sql);
+    }
+}
+
+class Model
+{
+    private $id;
+    private $name;
+    private $database;
+
+    public function __construct($name)
+    {
+        $this->name = $name;
+        $this->database = new Database();
+    }
+
+    public function save($entityName)
+    {
+        $stmt = $this->database->prepare("INSERT INTO $entityName (name) VALUES (:name)");
+        $stmt->bindParam(':name', $this->name);
+        $stmt->execute();
+    }
+
+    public function index($entityName)
+    {
+        $stmt = $this->database->prepare("SELECT * FROM $entityName");
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function show($entityName, $id)
+    {
+        // Récupération du produit en fonction de l'ID
+        $stmt = $this->database->prepare("SELECT * FROM $entityName WHERE id = :id");
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function edit($id, $entityName)
+    {
+        // Récupération des valeurs du produit en fonction de l'ID
+        $stmt = $this->database->prepare("SELECT * FROM $entityName WHERE id = :id");
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // Mettre à jour les propriétés de l'objet actuel avec les valeurs récupérées
+        foreach ($result as $key => $value) {
+            $this->$key = $value;
+        }
+    }
+
+    public function delete($entityName, $id)
+    {
+        // Suppression du produit en fonction de l'ID
+        $stmt = $this->database->prepare("DELETE FROM $entityName WHERE id = :id");
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+
+        echo "=> Enregistrement supprimé avec succès.\n";
+    }
+}
+
+class CrudGenerator
+{
+    public function generateEntity($entityName)
+    {
+        // Création du dossier pour l'entité
+        if (!file_exists("Model")) {
+            mkdir("Model", 0777, true);
+        }
+
+        // Chemin complet du fichier PHP
+        $filePath = "Model" . DIRECTORY_SEPARATOR . $entityName . '.php';
+
+        $fields = [];
+        $input = '';
+
+        while ($input !== 'done') {
+            echo "=> Quel est le nom du nouveau champ à ajouter à l'entité $entityName ? (Tapez 'done' pour arrêter d'ajouter des champs et générer l'entité)\n";
+            $input = readline();
+
+            if ($input !== 'done') {
+                $fields[] = $input;
+                echo "=> Quel est le type du champ $input ? (string || integer) (string par défaut)\n";
+                $type = readline();
+                $type = empty($type) ? 'string' : $type;
+                // Vous pouvez ajouter la logique pour traiter le champ et le type ici
+            }
+        }
+
+        // Génération de la table dans la base de données (à implémenter)
+        $this->generateDatabaseTable($entityName, $fields);
+
+        // Génération du fichier PHP
+        $this->generateEntityFile($filePath, $entityName, $fields);
+    }
+
+    private function generateDatabaseTable($tableName, $fields)
+    {
+        // Utilisation de PDO pour la connexion à la base de données
+        $dbh = new PDO('mysql:host=localhost;dbname=crud_generator', 'amine', 'Superteemo1');
+
+        // Création de la requête SQL pour créer la table
+        $createQuery = "CREATE TABLE $tableName (id INT PRIMARY KEY AUTO_INCREMENT, ";
+
+        foreach ($fields as $field) {
+            $createQuery .= "$field TEXT, ";
+        }
+
+        $createQuery = rtrim($createQuery, ', ') . ");";
+
+        // Exécution de la requête pour créer la table
+        $dbh->exec($createQuery);
+
+        echo "=> Table $tableName créée dans la base de données.\n";
+    }
+
+    private function generateEntityFile($filePath, $entityName, $fields)
+    {
+        $content = "<?php\n\nclass $entityName\n{\n";
+
+        // Propriétés
+        foreach ($fields as $field) {
+            $content .= "\tprivate $$field;\n";
+        }
+
+        // Constructeur
+        $content .= "\n\tpublic function __construct(";
+        foreach ($fields as $field) {
+            $content .= "$$field, ";
+        }
+        $content = rtrim($content, ', ') . ")\n\t{\n";
+        foreach ($fields as $field) {
+            $content .= "\t\t\$this->$field = $$field;\n";
+        }
+        $content .= "\t\t\$this->database = new Database();\n"; // Ajout de l'initialisation de $this->database
+        $content .= "\t}\n\n";
+
+        // Autres méthodes
+        $methods = get_class_methods('Model');
+        foreach ($methods as $method) {
+            if ($method !== '__construct') {
+                $content .= $this->generateMethodCode($method) . "\n\n";
+            }
+        }
+
+        $content .= "}\n?>";
+
+        file_put_contents($filePath, $content);
+
+        echo "=> Entité $entityName créé dans $entityName.php.\n";
+    }
+
+    private function generateMethodCode($methodName)
+    {
+        switch ($methodName) {
+            case 'save':
+                return "\tpublic function save(\$entityName)\n\t{\n" .
+                    "\t\t\$stmt = \$this->database->prepare(\"INSERT INTO \$entityName (name) VALUES (:name)\");\n" .
+                    "\t\t\$stmt->bindParam(':name', \$this->$methodName);\n" .
+                    "\t\t\$stmt->execute();\n\t}";
+            case 'index':
+                return "\tpublic function index(\$entityName)\n\t{\n" .
+                    "\t\t\$stmt = \$this->database->prepare(\"SELECT * FROM \$entityName\");\n" .
+                    "\t\t\$stmt->execute();\n" .
+                    "\t\treturn \$stmt->fetchAll(PDO::FETCH_ASSOC);\n\t}";
+            case 'show':
+                return "\tpublic function show(\$entityName, \$id)\n\t{\n" .
+                    "\t\t\$stmt = \$this->database->prepare(\"SELECT * FROM \$entityName WHERE id = :id\");\n" .
+                    "\t\t\$stmt->bindParam(':id', \$id);\n" .
+                    "\t\t\$stmt->execute();\n" .
+                    "\t\treturn \$stmt->fetch(PDO::FETCH_ASSOC);\n\t}";
+            case 'edit':
+                return "\tpublic function edit(\$id, \$entityName)\n\t{\n" .
+                    "\t\t\$stmt = \$this->database->prepare(\"SELECT * FROM \$entityName WHERE id = :id\");\n" .
+                    "\t\t\$stmt->bindParam(':id', \$id);\n" .
+                    "\t\t\$stmt->execute();\n\n" .
+                    "\t\t\$result = \$stmt->fetch(PDO::FETCH_ASSOC);\n\n" .
+                    "\t\tforeach (\$result as \$key => \$value) {\n" .
+                    "\t\t\t\$this->\$key = \$value;\n" .
+                    "\t\t}\n\t}";
+            case 'delete':
+                return "\tpublic function delete(\$entityName, \$id)\n\t{\n" .
+                    "\t\t\$stmt = \$this->database->prepare(\"DELETE FROM \$entityName WHERE id = :id\");\n" .
+                    "\t\t\$stmt->bindParam(':id', \$id);\n" .
+                    "\t\t\$stmt->execute();\n" .
+                    "\t\techo \"=> Enregistrement supprimé avec succès.\\n\";\n\t}";
+            default:
+                return "\tpublic function $methodName()\n\t{\n" .
+                    "\t\t// TODO: Implémenter la logique de la méthode $methodName\n" .
+                    "\t}";
+        }
+    }
+
+    public function CRUD($entityName)
+    {
+        $dirPath = "Controllers/$entityName/";
+
+        // verification de l'éxistance du modèl avant de cree le fichier controller
+        if (!file_exists("Model/$entityName.php")) {
+            die("L'entité n'éxiste pas.\n");
+        }
+
+        // creation du dossier controller si besoin
+        if (!file_exists("Controllers")) {
+            mkdir("Controllers", 0777, true);
+            echo "Dossier Controllers crée avec succès\n";
+        }
+
+        // verification de l'existence du controller
+        if (file_exists("$dirPath.$entityName.php")) {
+            die("le controller éxiste déjà.\n");
+        }
+
+        // suppresion du dossier s'il existe est qu'il est vide
+        if (file_exists("$dirPath")) {
+            $contenu = array_diff(scandir($dirPath), array('..', '.'));
+
+            if (empty($contenu)) {
+                rmdir($dirPath);
+            } else {
+                die("Le dossier $dirPath n'est pas vide.\n");
+            }
+        }
+
+        // cree le dossier au nom du controller
+        mkdir("$dirPath");
+        // Créer les fichiers
+        $listFilePath = "$dirPath" . "list.view.php";
+        $showFilePath = "$dirPath" . "show.view.php";
+        $newFilePath = "$dirPath" . "new.php";
+        $editFilePath = "$dirPath" . "edit.php";
+
+        // Générer le contenu du fichier pour list.view.php
+        $listControllerContent = "<?php\n\n"
+            . "namespace App\\Controllers\\$entityName;\n\n"
+            . "use Symfony\\Component\\HttpFoundation\\Response;\n"
+            . "use Symfony\\Component\\Routing\\Annotation\\Route;\n\n"
+            . "class {$entityName}Controller\n"
+            . "{\n"
+            . "    /**\n"
+            . "     * @Route(\"/$entityName/list\", name=\"{$entityName}_list\")\n"
+            . "     */\n"
+            . "    public function listAction()\n"
+            . "    {\n"
+            . "           \$entities = \$entityManager->getRepository(Entity::class)->findAll();\n"
+            . "           return new Response('Voir les elements');\n"
+            . "    }\n"
+            . "}\n";
+
+        $showControllerContent = "<?php\n\n"
+            . "namespace App\\Controllers\\$entityName;\n\n"
+            . "use Symfony\\Component\\HttpFoundation\\Response;\n"
+            . "use Symfony\\Component\\Routing\\Annotation\\Route;\n\n"
+            . "class {$entityName}Controller\n"
+            . "{\n"
+            . "    /**\n"
+            . "     * @Route(\"/$entityName/show/{id}\", name=\"{$entityName}_show\")\n"
+            . "     */\n"
+            . "    public function showAction(\$id)\n"
+            . "    {\n"
+            . "           \$entity = \$entityManager->getRepository(Entity::class)->find(\$id);\n"
+            . "           return new Response('Voir l\'élément avec l\'ID: ' . \$id);\n"
+            . "    }\n"
+            . "}\n";
+
+        $newControllerContent = "<?php\n\n"
+            . "namespace App\\Controllers\\$entityName;\n\n"
+            . "use Symfony\\Component\\HttpFoundation\\Response;\n"
+            . "use Symfony\\Component\\Routing\\Annotation\\Route;\n\n"
+            . "class {$entityName}Controller\n"
+            . "{\n"
+            . "    /**\n"
+            . "     * @Route(\"/$entityName/new\", name=\"{$entityName}_new\")\n"
+            . "     */\n"
+            . "    public function newAction()\n"
+            . "    {\n"
+            . "           \$entityManager->persist(\$entity);\n"
+            . "           \$entityManager->flush();\n"
+            . "           return new Response('Création de l\'élément avec succès');\n"
+            . "    }\n"
+            . "}\n";
+
+        // Générer le contenu du fichier pour edit.php
+        $editControllerContent = "<?php\n\n"
+            . "namespace App\\Controllers\\$entityName;\n\n"
+            . "use Symfony\\Component\\HttpFoundation\\Response;\n"
+            . "use Symfony\\Component\\Routing\\Annotation\\Route;\n\n"
+            . "class {$entityName}Controller\n"
+            . "{\n"
+            . "    /**\n"
+            . "     * @Route(\"/$entityName/edit/{id}\", name=\"{$entityName}_edit\")\n"
+            . "     */\n"
+            . "    public function editAction(\$id)\n"
+            . "    {\n"
+            . "         \$entity = \$entityManager->getRepository(Entity::class)->find(\$id);\n"
+            . "         \$entityManager->flush();\n"
+            . "        return new Response('Édition de l\'élément avec l\'ID: ' . \$id);\n"
+            . "    }\n"
+            . "}\n";
+
+        // Écrire le contenu dans les fichiers
+        file_put_contents($listFilePath, $listControllerContent);
+        file_put_contents($showFilePath, $showControllerContent);
+        file_put_contents($newFilePath, $newControllerContent);
+        file_put_contents($editFilePath, $editControllerContent);
+
+        // Afficher le message
+        echo "Les fichiers suivants ont été créés :\n";
+        echo "- $listFilePath\n";
+        echo "- $showFilePath\n";
+        echo "- $newFilePath\n";
+        echo "- $editFilePath\n";
+
+        // Afficher les URLs correspondantes
+        echo "\nCes fichiers sont accessibles aux URL suivantes :\n";
+        echo "- localhost/$entityName/list\n";
+        echo "- localhost/$entityName/show?id=xx\n";
+        echo "- localhost/$entityName/new\n";
+        echo "- localhost/$entityName/edit?id=xx\n";
+
+        // Creation du dossier pour les vues
+        if (!file_exists("Templates")) {
+            mkdir("Templates", 0777, true);
+        }
+
+        if (!file_exists("Templates/base.html.twig")) {
+            $baseHtmlTwig = "Templates/base.html.twig";
+            $baseHtmlTwigContent = "{# templates/base.html.twig #}\n\n"
+                . "<!DOCTYPE html>\n"
+                . "<html>\n"
+                . "<head>\n"
+                . "    <meta charset=\"UTF-8\">\n"
+                . "    <title>{% block title %}Titre par défaut{% endblock %}</title>\n"
+                . "</head>\n"
+                . "<body>\n"
+                . "    {% block body %}{% endblock %}\n"
+                . "</body>\n"
+                . "</html>\n";
+        file_put_contents($baseHtmlTwig, $baseHtmlTwigContent);
+
+        echo "$baseHtmlTwig est crée avec succès.\n";
+
+        }
+
+        if (!file_exists("Template/$entityName/")) {
+            mkdir("Templates/$entityName");
+        }
+
+        $listFileView = "Templates/$entityName/list_view.html.twig";
+        $showFileView = "Templates/$entityName/show_view.html.twig";
+        $newFileView = "Templates/$entityName/new.html.twig";
+        $editFileView = "Templates/$entityName/edit.html.twig";
+
+        $listViewContent = "{# templates/$entityName/list.html.twig #}\n\n"
+            . "{% extends 'base.html.twig' %}\n\n"
+            . "{% block title %}\n"
+            . "    Liste des {{ entityName }}\n"
+            . "{% endblock %}\n\n"
+            . "{% block body %}\n"
+            . "    <h1>Liste des {{ entityName }}</h1>\n\n"
+            . "    <ul>\n"
+            . "        {% for item in items %}\n"
+            . "            <li>{{ item.name }}</li>\n"
+            . "            {# Vous pouvez afficher d'autres propriétés de l'entité ici #}\n"
+            . "        {% endfor %}\n"
+            . "    </ul>\n"
+            . "{% endblock %}\n";
+
+        $showViewContent = "{# templates/$entityName/show.html.twig #}\n\n"
+            . "{% extends 'base.html.twig' %}\n\n"
+            . "{% block title %}\n"
+            . "    Affichage de {{ entityName }}\n"
+            . "{% endblock %}\n\n"
+            . "{% block body %}\n"
+            . "    <h1>Affichage de {{ entityName }}</h1>\n\n"
+            . "    <p>ID: {{ item.id }}</p>\n"
+            . "    <p>Nom: {{ item.name }}</p>\n"
+            . "    {# Vous pouvez afficher d'autres propriétés de l'entité ici #}\n"
+            . "{% endblock %}\n";
+
+        $newViewContent = "{# templates/$entityName/new.html.twig #}\n\n"
+            . "{% extends 'base.html.twig' %}\n\n"
+            . "{% block title %}\n"
+            . "    Création d'un nouvel élément {{ entityName }}\n"
+            . "{% endblock %}\n\n"
+            . "{% block body %}\n"
+            . "    <h1>Création d'un nouvel élément {{ entityName }}</h1>\n\n"
+            . "{# Vous pouvez ajouter des formulaires ou d'autres éléments ici pour créer un nouvel élément #}\n"
+            . "{% endblock %}\n";
+
+        $editViewContent = "{# templates/$entityName/edit.html.twig #}\n\n"
+            . "{% extends 'base.html.twig' %}\n\n"
+            . "{% block title %}\n"
+            . "    Édition de {{ entityName }}\n"
+            . "{% endblock %}\n\n"
+            . "{% block body %}\n"
+            . "    <h1>Édition de {{ entityName }}</h1>\n\n"
+            . "{# Vous pouvez ajouter des formulaires pré-remplis ou d'autres éléments ici pour éditer un élément existant #}\n"
+            . "{% endblock %}\n";
+
+        file_put_contents($listFileView, $listViewContent);
+        file_put_contents($showFileView, $showViewContent);
+        file_put_contents($newFileView, $newViewContent);
+        file_put_contents($editFileView, $editViewContent);
+
+    }
+
+}
+
+$crudGenerator = new CrudGenerator();
+
+if ($argc < 4 || $argv[1] !== '-g') {
+    die("Usage: php crud_generator -g entity <entity_name>\n");
+}
+
+$entityName = $argv[3];
+if ($argv[2] === 'entity') {
+    $crudGenerator->generateEntity($entityName);
+} elseif ($argv[2] === 'crud') {
+    $crudGenerator->CRUD($entityName);
+} else {
+    echo "Merci de respecter les paramettres du script \nexemple : \ncrud_generator -g entity nomDuFichier(exempleNom)  \n\t\tou \ncrud_generator -g crud exempleNom \n";
+}

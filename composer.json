@@ -1,0 +1,16 @@
+{
+    "name": "amine/crud-generator",
+    "description": "generate files like symfony framework",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "Amine\\CrudGenerator\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "amine",
+            "email": "mohammed-el-amine.djellal@epitech.eu"
+        }
+    ]
+}
